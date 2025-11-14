@@ -1,0 +1,33 @@
+{
+    "name": "aldiap/invoice",
+    "description": "Laravel Invoice Package with Morph Relationships",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Aldiap\\Invoice\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Aldiap",
+            "email": "contact@aldiap.com"
+        }
+    ],
+    "require": {
+        "php": "^8.0",
+        "laravel/framework": "^9.0|^10.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Aldiap\\Invoice\\InvoiceServiceProvider"
+            ],
+            "aliases": {
+                "Invoice": "Aldiap\\Invoice\\Facades\\Invoice"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
