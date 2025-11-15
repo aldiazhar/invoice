@@ -20,7 +20,7 @@ return new class extends Migration
             $table->string('ip_address')->nullable();
             $table->text('user_agent')->nullable();
             
-            $table->morphs('causer');
+            $table->nullableMorphs('causer');
             
             $table->timestamps();
             

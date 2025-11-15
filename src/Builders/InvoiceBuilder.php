@@ -125,6 +125,7 @@ class InvoiceBuilder
         }
         
         $this->taxAmount = $amount;
+        $this->strictValidation = false;
         return $this;
     }
 
@@ -135,6 +136,7 @@ class InvoiceBuilder
         }
         
         $this->discountAmount = $amount;
+        $this->strictValidation = false;
         return $this;
     }
 
