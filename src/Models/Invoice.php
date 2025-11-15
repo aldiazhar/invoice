@@ -47,7 +47,7 @@ class Invoice extends Model
     /**
      * Store callbacks in memory (not in database)
      */
-    public $pending_callbacks = [];
+    public $after_paid_callbacks = [];
 
     public function __construct(array $attributes = [])
     {
@@ -113,14 +113,15 @@ class Invoice extends Model
             return;
         }
 
-        if (!empty($this->pending_callbacks)) {
-            foreach ($this->pending_callbacks as $callback) {
+        // Execute in-memory callbacks (from builder when paid)
+        if (!empty($this->after_paid_callbacks)) {
+            foreach ($this->after_paid_callbacks as $callback) {
                 if (is_callable($callback)) {
                     try {
                         $callback($this);
                     } catch (\Exception $e) {
                         // Log error but don't fail the payment
-                        logger()->error('Invoice callback error: ' . $e->getMessage());
+                        logger()->error('Invoice paid callback error: ' . $e->getMessage());
                     }
                 }
             }

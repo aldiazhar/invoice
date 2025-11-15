@@ -23,6 +23,8 @@ class InvoiceBuilder
     protected $description;
     protected $metadata = [];
     protected $callbacks = [];
+    protected $afterCreateCallbacks = [];
+    protected $afterPaidCallbacks = [];
 
     public function __construct($payer = null)
     {
@@ -209,12 +211,29 @@ class InvoiceBuilder
     }
 
     /**
-     * Add callback to execute after payment
+     * Add callback to execute after invoice is created
      */
     public function after(callable $callback): self
     {
-        $this->callbacks[] = $callback;
+        $this->afterCreateCallbacks[] = $callback;
         return $this;
+    }
+
+    /**
+     * Add callback to execute when invoice is paid
+     */
+    public function onPaid(callable $callback): self
+    {
+        $this->afterPaidCallbacks[] = $callback;
+        return $this;
+    }
+
+    /**
+     * Alias for onPaid (backward compatibility)
+     */
+    public function whenPaid(callable $callback): self
+    {
+        return $this->onPaid($callback);
     }
 
     /**
@@ -263,7 +282,7 @@ class InvoiceBuilder
         
         // Store callbacks - we'll execute them later, not serialize
         // Callbacks are stored in memory only, not in database
-        $invoice->pending_callbacks = $this->callbacks;
+        $invoice->after_paid_callbacks = $this->afterPaidCallbacks;
         
         $invoice->save();
         
@@ -280,6 +299,15 @@ class InvoiceBuilder
                 'notes' => $item['notes'],
                 'sku' => $item['sku'],
             ]);
+        }
+        
+        // Execute after-create callbacks immediately
+        foreach ($this->afterCreateCallbacks as $callback) {
+            try {
+                $callback($invoice);
+            } catch (\Exception $e) {
+                logger()->error('Invoice after-create callback error: ' . $e->getMessage());
+            }
         }
         
         return $invoice->fresh(['items']);
