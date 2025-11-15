@@ -62,7 +62,6 @@ php artisan vendor:publish --provider="Aldiazhar\Invoice\InvoiceServiceProvider"
 # Or publish individually
 php artisan vendor:publish --tag=invoice-config
 php artisan vendor:publish --tag=invoice-migrations
-php artisan vendor:publish --tag=invoice-views
 ```
 
 ### Step 3: Run Migrations

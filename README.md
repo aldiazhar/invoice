@@ -69,7 +69,6 @@ Publish configuration and migrations:
 ```bash
 php artisan vendor:publish --tag=invoice-config
 php artisan vendor:publish --tag=invoice-migrations
-php artisan vendor:publish --tag=invoice-views
 ```
 
 Run migrations:
