@@ -49,7 +49,7 @@ class InvoiceBuilder
 
     public function pay($invoiceable): self
     {
-        if (!$invoiceable instanceof InvoiceableContract) {
+        if (!$invoiceable instanceof \Aldiazhar\Invoice\Contracts\Invoiceable) {
             throw new InvoiceException('Invoiceable must implement Invoiceable interface');
         }
         
