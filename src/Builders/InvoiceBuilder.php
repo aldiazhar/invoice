@@ -28,6 +28,7 @@ class InvoiceBuilder
     protected $recurringFrequency;
     protected $recurringInterval = 1;
     protected $recurringEndDate;
+    protected $autoAddInvoiceableItem = true;
 
     public function __construct($payer = null)
     {
@@ -39,7 +40,7 @@ class InvoiceBuilder
 
     public function from($payer): self
     {
-        if (!$payer instanceof Payer) {
+        if (!$this->isValidPayer($payer)) {
             throw new InvoiceException('Payer must implement Payer interface');
         }
         
@@ -49,7 +50,7 @@ class InvoiceBuilder
 
     public function pay($invoiceable): self
     {
-        if (!$invoiceable instanceof \Aldiazhar\Invoice\Contracts\Invoiceable) {
+        if (!$this->isValidInvoiceable($invoiceable)) {
             throw new InvoiceException('Invoiceable must implement Invoiceable interface');
         }
         
@@ -77,6 +78,12 @@ class InvoiceBuilder
             ]);
         }
         
+        return $this;
+    }
+
+    public function withoutAutoItem(): self
+    {
+        $this->autoAddInvoiceableItem = false;
         return $this;
     }
 
@@ -219,6 +226,10 @@ class InvoiceBuilder
 
     public function create(): Invoice
     {
+        if (empty($this->items) && $this->autoAddInvoiceableItem) {
+            $this->withInvoiceableItem();
+        }
+
         $this->validate();
         
         $invoice = new Invoice();
@@ -297,6 +308,41 @@ class InvoiceBuilder
         }
         
         return $invoice->fresh(['items']);
+    }
+
+    protected function isValidPayer($object): bool
+    {
+        if (!is_object($object)) {
+            return false;
+        }
+
+        return method_exists($object, 'getPayerName')
+            && method_exists($object, 'getPayerEmail')
+            && method_exists($object, 'getPayerAddress')
+            && method_exists($object, 'getPayerMetadata');
+    }
+
+    protected function isValidInvoiceable($object): bool
+    {
+        if (!is_object($object)) {
+            return false;
+        }
+
+        $required = [
+            'getInvoiceableDescription',
+            'getInvoiceableAmount',
+            'getInvoiceableMetadata',
+            'onInvoicePaid'
+        ];
+
+        foreach ($required as $method) {
+            if (!method_exists($object, $method)) {
+                logger()->error("Missing method: {$method} in " . get_class($object));
+                return false;
+            }
+        }
+
+        return true;
     }
 
     protected function validateItem(string $name, float $price, int $quantity, float $taxRate): void
