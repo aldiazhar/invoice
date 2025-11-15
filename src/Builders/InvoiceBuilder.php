@@ -261,10 +261,9 @@ class InvoiceBuilder
             $this->invoiceable->getInvoiceableMetadata()
         );
         
-        // Store callbacks
-        if (!empty($this->callbacks)) {
-            $invoice->callbacks = serialize($this->callbacks);
-        }
+        // Store callbacks - we'll execute them later, not serialize
+        // Callbacks are stored in memory only, not in database
+        $invoice->pending_callbacks = $this->callbacks;
         
         $invoice->save();
         

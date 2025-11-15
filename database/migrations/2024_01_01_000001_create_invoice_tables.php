@@ -13,14 +13,17 @@ return new class extends Migration
             $table->id();
             $table->string('invoice_number')->unique();
             
+            // Polymorphic relation for payer (who pays)
             $table->morphs('payer');
             $table->string('payer_name')->nullable();
             $table->string('payer_email')->nullable();
             
+            // Polymorphic relation for invoiceable (what is being paid)
             $table->morphs('invoiceable');
             
             $table->text('description')->nullable();
             
+            // Amount breakdown
             $table->decimal('subtotal_amount', 15, 2);
             $table->decimal('tax_amount', 15, 2)->default(0);
             $table->decimal('discount_amount', 15, 2)->default(0);
@@ -33,10 +36,11 @@ return new class extends Migration
             $table->timestamp('paid_at')->nullable();
             
             $table->json('metadata')->nullable();
-            $table->text('callbacks')->nullable();
             
             $table->timestamps();
             $table->softDeletes();
+            
+            // Indexes for performance
             $table->index(['payer_id', 'payer_type']);
             $table->index(['invoiceable_id', 'invoiceable_type']);
             $table->index('status');

@@ -30,7 +30,6 @@ class Invoice extends Model
         'due_date',
         'paid_at',
         'metadata',
-        'callbacks',
     ];
 
     protected $casts = [
@@ -44,6 +43,11 @@ class Invoice extends Model
     ];
 
     protected $appends = ['status_label', 'formatted_total'];
+
+    /**
+     * Store callbacks in memory (not in database)
+     */
+    public $pending_callbacks = [];
 
     public function __construct(array $attributes = [])
     {
@@ -109,19 +113,15 @@ class Invoice extends Model
             return;
         }
 
-        if (empty($this->callbacks)) {
-            return;
-        }
-
-        $callbacks = unserialize($this->callbacks);
-
-        foreach ($callbacks as $callback) {
-            if (is_callable($callback)) {
-                try {
-                    $callback($this);
-                } catch (\Exception $e) {
-                    // Log error but don't fail the payment
-                    logger()->error('Invoice callback error: ' . $e->getMessage());
+        if (!empty($this->pending_callbacks)) {
+            foreach ($this->pending_callbacks as $callback) {
+                if (is_callable($callback)) {
+                    try {
+                        $callback($this);
+                    } catch (\Exception $e) {
+                        // Log error but don't fail the payment
+                        logger()->error('Invoice callback error: ' . $e->getMessage());
+                    }
                 }
             }
         }
