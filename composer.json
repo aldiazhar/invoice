@@ -1,30 +1,42 @@
 {
-    "name": "aldiap/invoice",
-    "description": "Laravel Invoice Package with Morph Relationships",
+    "name": "aldiazhar/laravel-invoice",
+    "description": "Revolutionary Laravel invoice package with dual morph relationships and fluent builder pattern",
+    "keywords": ["laravel", "invoice", "payment", "billing", "polymorphic"],
     "type": "library",
     "license": "MIT",
-    "autoload": {
-        "psr-4": {
-            "Aldiap\\Invoice\\": "src/"
-        }
-    },
     "authors": [
         {
-            "name": "Aldiap",
-            "email": "contact@aldiap.com"
+            "name": "Aldi",
+            "email": "permana.azhar.aldi@gmail.com"
         }
     ],
     "require": {
-        "php": "^8.0",
-        "laravel/framework": "^9.0|^10.0"
+        "php": "^8.1|^8.2|^8.3",
+        "illuminate/support": "^10.0|^11.0|^12.0",
+        "illuminate/http": "^10.0|^11.0|^12.0",
+        "illuminate/contracts": "^10.0|^11.0|^12.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^8.0|^9.0|^10.0",
+        "phpunit/phpunit": "^10.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Aldiazhar\\Invoice\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Aldiazhar\\Invoice\\Tests\\": "tests/"
+        }
     },
     "extra": {
         "laravel": {
             "providers": [
-                "Aldiap\\Invoice\\InvoiceServiceProvider"
+                "Aldiazhar\\Invoice\\InvoiceServiceProvider"
             ],
             "aliases": {
-                "Invoice": "Aldiap\\Invoice\\Facades\\Invoice"
+                "Invoice": "Aldiazhar\\Invoice\\Facades\\Invoice"
             }
         }
     },
