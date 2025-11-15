@@ -8,7 +8,8 @@ return new class extends Migration
 {
     public function up()
     {
-        Schema::create(config('invoice.tables.invoices', 'invoices'), function (Blueprint $table) {
+        // Create invoices table
+        Schema::create('invoices', function (Blueprint $table) {
             $table->id();
             $table->string('invoice_number')->unique();
             
@@ -42,10 +43,28 @@ return new class extends Migration
             $table->index('due_date');
             $table->index('paid_at');
         });
+
+        // Create invoice_items table
+        Schema::create('invoice_items', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('invoice_id')->constrained()->onDelete('cascade');
+            
+            $table->string('name');
+            $table->text('description')->nullable();
+            $table->decimal('price', 15, 2);
+            $table->integer('quantity')->default(1);
+            $table->decimal('tax_rate', 8, 4)->default(0);
+            $table->decimal('subtotal', 15, 2);
+            $table->string('sku')->nullable();
+            $table->text('notes')->nullable();
+            $table->index('invoice_id');
+            $table->index('sku');
+        });
     }
 
     public function down()
     {
-        Schema::dropIfExists(config('invoice.tables.invoices', 'invoices'));
+        Schema::dropIfExists('invoice_items');
+        Schema::dropIfExists('invoices');
     }
 };
