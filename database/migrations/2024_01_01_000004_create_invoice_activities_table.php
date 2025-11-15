@@ -26,7 +26,6 @@ return new class extends Migration
             
             $table->index('invoice_id');
             $table->index('action');
-            $table->index(['causer_type', 'causer_id']);
         });
     }
 
