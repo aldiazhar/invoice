@@ -34,25 +34,16 @@ class InvoiceItem extends Model
         $this->setTable(config('invoice.tables.invoice_items', 'invoice_items'));
     }
 
-    /**
-     * Get the invoice that owns the item
-     */
     public function invoice(): BelongsTo
     {
         return $this->belongsTo(Invoice::class);
     }
 
-    /**
-     * Get tax amount for this item
-     */
     public function getTaxAmountAttribute(): float
     {
         return $this->subtotal * $this->tax_rate;
     }
 
-    /**
-     * Get total amount including tax
-     */
     public function getTotalAttribute(): float
     {
         return $this->subtotal + $this->tax_amount;

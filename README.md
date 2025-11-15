@@ -1,93 +1,37 @@
-# Aldiazhar Invoice Package
+# Laravel Invoice Package
 
-> Revolutionary Laravel invoice package with dual morph relationships and fluent builder pattern
+A flexible and powerful invoice management package for Laravel applications.
 
-## 🎯 Vision & Purpose
+## Requirements
 
-Aldiazhar Invoice Package is a Laravel package designed to simplify invoice management with a flexible morph relationship system. This package enables developers to implement complex payment systems with elegant and intuitive syntax in minutes.
+- PHP 8.1, 8.2, or 8.3
+- Laravel 10.x, 11.x, or 12.x
 
-## 🚀 Key Features
-
-### 1. **Dual Morph Relationship System**
-Two powerful polymorphic relationships:
-- **Payer Morph**: User, Agent, Company (who pays)
-- **Invoiceable Morph**: TopUp, Registration, Service (what gets paid)
-
-### 2. **Fluent Builder Pattern**
-Natural language-like syntax with flexible item format:
-
-```php
-$invoice = $user->invoice()
-    ->pay($topup)
-    ->item([
-        'name' => 'Premium Service',
-        'description' => 'Monthly premium subscription',
-        'price' => 25.00,
-        'quantity' => 1,
-        'tax_rate' => 0.1,
-        'sku' => 'PREM-001'
-    ])
-    ->discount(5.00)
-    ->due('+7 days')
-    ->after(fn($inv) => $topup->activate())
-    ->create();
-```
-
-### 3. **Multi-Directional Invoice Creation**
-Create invoices from anyone and for anything:
-
-```php
-// From payer side
-$user->invoice()->pay($topup)
-
-// From invoiceable side  
-$topup->bill()->to($user)
-
-// Via Facade directly
-Invoice::create($user, $topup)
-```
-
-### 4. **Smart Callback System**
-Automated actions after payment:
-
-```php
-->after(function($paidInvoice) {
-    $user->notify(new PaymentSuccess);
-    $service->activate();
-    $commission->distribute();
-})
-```
-
-## 📦 Installation
+## Installation
 
 ```bash
 composer require aldiazhar/laravel-invoice
 ```
 
-Publish configuration and migrations:
+### Publish Assets
 
 ```bash
 php artisan vendor:publish --tag=invoice-config
 php artisan vendor:publish --tag=invoice-migrations
-```
-
-Run migrations:
-
-```bash
 php artisan migrate
 ```
 
-## 🛠 Quick Start
+## Quick Start
 
-### Step 1: Implement Contracts & Traits
+### 1. Setup Models
 
-**For Payers (User, Agent, Company)**:
+**User Model (Payer):**
 
 ```php
-use Aldiazhar\Invoice\Traits\HasInvoices;
 use Aldiazhar\Invoice\Contracts\Payer;
+use Aldiazhar\Invoice\Traits\HasInvoices;
 
-class User extends Authenticatable implements Payer
+class User extends Model implements Payer
 {
     use HasInvoices;
 
@@ -108,24 +52,24 @@ class User extends Authenticatable implements Payer
 
     public function getPayerMetadata(): array
     {
-        return ['user_id' => $this->id];
+        return ['phone' => $this->phone];
     }
 }
 ```
 
-**For Invoiceables (TopUp, Registration, Service)**:
+**TopUp Model (Invoiceable):**
 
 ```php
-use Aldiazhar\Invoice\Traits\Invoiceable as InvoiceableTrait;
-use Aldiazhar\Invoice\Contracts\Invoiceable;
+use Aldiazhar\Invoice\Contracts\Invoiceable as InvoiceableContract;
+use Aldiazhar\Invoice\Traits\Invoiceable;
 
-class TopUp extends Model implements Invoiceable
+class TopUp extends Model implements InvoiceableContract
 {
-    use InvoiceableTrait;
+    use Invoiceable;
 
     public function getInvoiceableDescription(): string
     {
-        return "Top Up - {$this->type}";
+        return "Top Up - {$this->package_name}";
     }
 
     public function getInvoiceableAmount(): float
@@ -135,365 +79,282 @@ class TopUp extends Model implements Invoiceable
 
     public function getInvoiceableMetadata(): array
     {
-        return ['topup_id' => $this->id];
+        return ['package_id' => $this->package_id];
     }
 
     public function onInvoicePaid($invoice): void
     {
-        // Auto-execute when invoice is paid
-        $this->update(['status' => 'active']);
+        $this->update(['status' => 'completed']);
     }
 }
 ```
 
-### Step 2: Create Invoices
+### 2. Create Invoice
+
+**Simple Invoice:**
 
 ```php
-// User pays for TopUp with detailed items
-$user = User::find(1);
-$topup = TopUp::create(['amount' => 100]);
-
 $invoice = $user->invoice()
     ->pay($topup)
-    ->item([
-        'name' => 'Top Up Credit',
-        'description' => 'Premium credit package',
-        'price' => 100.00,
-        'quantity' => 1,
-        'tax_rate' => 0.1, // 10% tax
-        'sku' => 'TOPUP-PREM'
-    ])
-    ->discount(5.00)
-    ->due('+7 days')
-    ->after(fn($inv) => $user->notify(new PaymentSuccess($inv)))
-    ->create();
-
-// Multiple items at once
-$invoice = $user->invoice()
-    ->pay($order)
-    ->items([
-        [
-            'name' => 'Product A',
-            'price' => 50.00,
-            'quantity' => 2,
-            'tax_rate' => 0.1
-        ],
-        [
-            'name' => 'Shipping',
-            'price' => 10.00,
-            'quantity' => 1
-        ]
-    ])
-    ->create();
-
-// Traditional format (still supported)
-$invoice = $user->invoice()
-    ->pay($topup)
-    ->item('Service', 100.00, 1, 0.1)
+    ->item('Top Up Package', 100000)
     ->create();
 ```
 
-### Step 3: Process Payment
+**Multiple Items:**
 
 ```php
-// Mark as paid (triggers callbacks)
-$invoice->markAsPaid();
+$invoice = $user->invoice()
+    ->pay($order)
+    ->item('Product A', 50000, 2)
+    ->item('Product B', 75000, 1)
+    ->tax(10000)
+    ->discount(5000)
+    ->create();
+```
 
-// Check status
+**Using Array:**
+
+```php
+$invoice = $user->invoice()
+    ->pay($order)
+    ->items([
+        ['name' => 'Product A', 'price' => 50000, 'quantity' => 2, 'tax_rate' => 0.11],
+        ['name' => 'Product B', 'price' => 75000, 'quantity' => 1],
+    ])
+    ->create();
+```
+
+**Advanced:**
+
+```php
+$invoice = $user->invoice()
+    ->pay($order)
+    ->item('Premium Package', 500000)
+    ->tax(20000)
+    ->discount(50000)
+    ->currency('USD')
+    ->due('2024-12-31')
+    ->description('Monthly subscription')
+    ->meta(['campaign_id' => 123])
+    ->after(function($invoice) {
+        // Custom logic after create
+    })
+    ->onPaid(function($invoice) {
+        // Custom logic when paid
+    })
+    ->create();
+```
+
+### 3. Invoice Management
+
+```php
+$invoice->markAsPaid();
+$invoice->cancel();
+$invoice->markAsFailed();
+$invoice->refund();
+
 if ($invoice->isPaid()) {
-    echo "Payment successful!";
+    //
+}
+
+if ($invoice->isOverdue()) {
+    //
 }
 ```
 
-## 💡 Real-World Use Cases
-
-### E-Commerce Platform
+### 4. Partial Payments
 
 ```php
-$invoice = $customer->invoice()
-    ->pay($order)
-    ->items([
-        [
-            'name' => 'Product XYZ',
-            'description' => 'Premium quality product',
-            'price' => 99.99,
-            'quantity' => 2,
-            'tax_rate' => 0.1,
-            'sku' => 'PRD-XYZ-001'
-        ],
-        [
-            'name' => 'Shipping',
-            'price' => 15.00,
-            'quantity' => 1
-        ]
-    ])
-    ->after(fn($inv) => $order->markAsPaid())
-    ->create();
+$invoice->addPayment(50000, 'bank_transfer', [
+    'reference' => 'TRX-123',
+    'notes' => 'First installment',
+]);
+
+$paidAmount = $invoice->getPaidAmount();
+$remaining = $invoice->getRemainingAmount();
+$isFullyPaid = $invoice->isFullyPaid();
 ```
 
-### SaaS Subscription
+### 5. Recurring Invoices
 
 ```php
-$invoice = $company->invoice()
+$invoice = $user->invoice()
     ->pay($subscription)
-    ->item([
-        'name' => 'Pro Plan',
-        'description' => 'Pro Plan - March 2024',
-        'price' => 49.99,
-        'sku' => 'PLAN-PRO-MONTHLY'
-    ])
-    ->due('+30 days')
-    ->after(fn($inv) => $subscription->renew())
-    ->create();
-```
-
-### Service Marketplace
-
-```php
-$invoice = $agent->invoice()
-    ->pay($commissionFee)
-    ->item([
-        'name' => 'Platform Commission',
-        'price' => 25.00
-    ])
-    ->discount(5.00)
-    ->create();
-```
-
-## 🎨 Developer Experience
-
-### Short Syntax Options
-
-```php
-// Full method names
-$user->invoice()->pay($topup)->create();
-
-// Short aliases
-$user->inv()->pay($topup)->create();
-
-// From invoiceable side
-$topup->bill()->to($user)->create();
-$topup->inv()->by($user)->create();
-```
-
-### Rich Query Methods
-
-```php
-// From payer
-$user->paidInvoices()->get();
-$user->pendingInvoices()->get();
-$user->overdueInvoices()->get();
-$user->getTotalPaidAmount();
-$user->getInvoiceStats();
-
-// From invoiceable
-$topup->invoices;
-$topup->getTotalRevenue();
-$topup->hasBeenPaid();
-
-// Global queries
-Invoice::pending();
-Invoice::paid();
-Invoice::overdue();
-Invoice::stats();
-```
-
-## 🔧 Advanced Features
-
-### Multiple Items with Tax Rates
-
-```php
-$invoice = $user->invoice()
-    ->pay($order)
-    ->items([
-        [
-            'name' => 'Product A',
-            'price' => 50.00,
-            'quantity' => 2,
-            'tax_rate' => 0.1,  // 10% tax
-            'sku' => 'PRD-A'
-        ],
-        [
-            'name' => 'Product B',
-            'price' => 30.00,
-            'quantity' => 1,
-            'tax_rate' => 0.05, // 5% tax
-            'sku' => 'PRD-B'
-        ],
-        [
-            'name' => 'Shipping',
-            'price' => 10.00,
-            'quantity' => 1,
-            'tax_rate' => 0     // No tax
-        ]
-    ])
+    ->item('Monthly Premium', 99000)
+    ->makeRecurring('monthly', now()->addYear())
     ->create();
 
-// Or use traditional format
-$invoice = $user->invoice()
-    ->pay($order)
-    ->item('Product A', 50.00, 2, 0.1)
-    ->item('Product B', 30.00, 1, 0.05)
-    ->item('Shipping', 10.00, 1, 0)
-    ->create();
+$schedule->command('invoices:generate-recurring')->daily();
 ```
 
-### Multiple Callbacks
-
-```php
-$invoice = $user->invoice()
-    ->pay($topup)
-    ->after(fn($inv) => Mail::to($inv->payer_email)->send(new InvoicePaid($inv)))
-    ->after(fn($inv) => Cache::forget('user_stats_' . $inv->payer_id))
-    ->after(fn($inv) => Http::post('https://api.example.com/webhook', $inv->toArray()))
-    ->create();
-```
-
-### Custom Metadata
-
-```php
-$invoice = $user->invoice()
-    ->pay($topup)
-    ->meta([
-        'payment_gateway' => 'stripe',
-        'internal_reference' => 'ORD-123',
-        'custom_field' => 'value',
-    ])
-    ->create();
-```
-
-## 🗄 Database Schema
-
-### Invoices Table
-- `invoice_number` - Unique, auto-generated
-- `payer_id`, `payer_type` - Polymorphic payer
-- `invoiceable_id`, `invoiceable_type` - Polymorphic invoiceable
-- `subtotal_amount`, `tax_amount`, `discount_amount`, `total_amount`
-- `status` - pending, paid, failed, cancelled, refunded, overdue
-- `due_date`, `paid_at`
-- `metadata` - JSON for additional data
-- `callbacks` - Serialized callbacks
-
-### Invoice Items Table
-- `invoice_id` - Foreign key
-- `name` - Product/service name
-- `description` - Detailed description
-- `price`, `quantity`, `tax_rate`, `subtotal`
-- `sku` - Product SKU/code
-- `notes` - Additional notes
-
-## ⚡ Performance
-
-Built-in optimizations:
-- Database indexing on polymorphic columns
-- Eager loading ready
-- Efficient query scopes
-- No N+1 queries
-
-```php
-// Prevent N+1 queries
-$invoices = Invoice::with(['payer', 'invoiceable', 'items'])->get();
-```
-
-## 🎯 Use Case: User vs Agent
-
-```php
-// Users pay for TopUp AND RegistrationFee
-$user = User::find(1);
-$topupInvoice = $user->invoice()->pay($topup)->create();
-$regFeeInvoice = $user->invoice()->pay($registrationFee)->create();
-
-// Agents only pay for TopUp
-$agent = Agent::find(1);
-$topupInvoice = $agent->invoice()->pay($topup)->create();
-// No registration fee for agents!
-```
-
-## 📊 Using the Facade
+### 6. Query & Statistics
 
 ```php
 use Aldiazhar\Invoice\Facades\Invoice;
 
-// Get statistics
-$stats = Invoice::stats();
-
-// Find invoice
-$invoice = Invoice::find(123);
-
-// Get collections
 $pending = Invoice::pending();
 $paid = Invoice::paid();
 $overdue = Invoice::overdue();
+
+$stats = Invoice::stats();
+
+$userStats = $user->getInvoiceStats();
 ```
 
-## ⚙️ Configuration
+### 7. Activity Log
+
+```php
+$activities = $invoice->activities;
+
+foreach ($activities as $activity) {
+    echo $activity->action;
+    echo $activity->description;
+    echo $activity->causer->name;
+}
+```
+
+## Configuration
 
 Edit `config/invoice.php`:
 
 ```php
 return [
     'currency' => 'USD',
+    'due_date_days' => 30,
+    'strict_validation' => true,
+    
     'invoice_number' => [
         'prefix' => 'INV-',
         'format' => 'Ymd',
         'padding' => 4,
     ],
-    'due_date_days' => 30,
-    'routes' => [
-        'enabled' => true,
-        'prefix' => 'invoices',
-        'middleware' => ['web', 'auth'],
-    ],
-    // ... more options
 ];
 ```
 
-## 🔐 Security
+## Validation
 
-- Built-in authorization ready
-- Data validation
-- Soft deletes for audit trail
-- Secure callback execution
+### Strict Mode (Default)
 
-## 🛣 Roadmap
+Invoice total must match invoiceable amount:
 
-- [ ] Payment Gateway Integration (Stripe, PayPal, Midtrans)
-- [ ] Recurring Invoices
-- [ ] Multi-currency Support
-- [ ] Advanced Reporting
-- [ ] Webhook System
-- [ ] PDF Generation
-- [ ] Email Templates
+```php
+$invoice = $user->invoice()
+    ->pay($topup)  // Amount: 100000
+    ->item('Top Up', 100000)  // Must match
+    ->create();
+```
 
-## 🎉 Why Aldiazhar Invoice?
+### Disable Strict Mode
 
-✅ **90% faster development** - Implement invoicing in minutes, not days  
-✅ **Dual morph flexibility** - Pay anyone, for anything  
-✅ **Natural syntax** - Code that reads like English  
-✅ **Production ready** - Tested, secure, performant  
-✅ **Complete solution** - From creation to payment  
-✅ **Extensive documentation** - Examples for every scenario  
+```php
+$invoice = $user->invoice()
+    ->pay($topup)
+    ->item('Top Up', 50000)
+    ->withoutStrictValidation()
+    ->create();
+```
 
-## 📝 License
+## API Reference
+
+### InvoiceBuilder Methods
+
+```php
+->from($payer)
+->pay($invoiceable)
+->by($payer)
+->to($invoiceable)
+->item($name, $price, $quantity = 1, $taxRate = 0)
+->items(array $items)
+->tax(float $amount)
+->discount(float $amount)
+->currency(string $currency)
+->status(string $status)
+->due($date)
+->description(string $description)
+->meta(array $metadata)
+->withoutStrictValidation()
+->makeRecurring($frequency, $endDate, $interval)
+->after(callable $callback)
+->onPaid(callable $callback)
+->create()
+```
+
+### Invoice Methods
+
+```php
+$invoice->markAsPaid()
+$invoice->cancel()
+$invoice->markAsFailed()
+$invoice->refund()
+$invoice->addPayment($amount, $method, $data)
+$invoice->generateNextInvoice()
+$invoice->isPaid()
+$invoice->isPending()
+$invoice->isOverdue()
+$invoice->getPaidAmount()
+$invoice->getRemainingAmount()
+$invoice->isFullyPaid()
+```
+
+### Query Scopes
+
+```php
+Invoice::pending()
+Invoice::paid()
+Invoice::failed()
+Invoice::overdue()
+Invoice::forPayer($payer)
+Invoice::forInvoiceable($invoiceable)
+```
+
+## Examples
+
+### E-Commerce Order
+
+```php
+$invoice = $user->invoice()
+    ->pay($order)
+    ->items($order->items->map(fn($item) => [
+        'name' => $item->product->name,
+        'price' => $item->price,
+        'quantity' => $item->quantity,
+        'sku' => $item->product->sku,
+    ])->toArray())
+    ->tax($order->tax_amount)
+    ->discount($order->discount_amount)
+    ->create();
+```
+
+### Subscription
+
+```php
+$invoice = $user->invoice()
+    ->pay($subscription)
+    ->item('Premium Membership', 99.99)
+    ->makeRecurring('monthly')
+    ->onPaid(function($invoice) {
+        $invoice->invoiceable->renew();
+    })
+    ->create();
+```
+
+### Service Payment
+
+```php
+$invoice = $user->invoice()
+    ->pay($service)
+    ->item('Consulting Service', 150, 8)
+    ->tax(0.11)
+    ->due(now()->addDays(15))
+    ->description('Project: Website Development')
+    ->create();
+```
+
+## License
 
 MIT License
 
-## 🤝 Contributing
+## Support
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## 💬 Support
-
-For issues and questions:
-- GitHub Issues: [https://github.com/aldiazhar/laravel-invoice/issues](https://github.com/aldiazhar/laravel-invoice/issues)
-- Email: permana.azhar.aldi@gmail.com
-
-## 🌟 Show Your Support
-
-If this package helps you, please give it a ⭐️ on [GitHub](https://github.com/aldiazhar/laravel-invoice)!
-
----
-
-**Built with ❤️ by Aldiazhar**
-
-*Transform complex invoice management into elegant code.*
+- GitHub: [aldiazhar/laravel-invoice](https://github.com/aldiazhar/laravel-invoice)
+- Issues: [GitHub Issues](https://github.com/aldiazhar/laravel-invoice/issues)

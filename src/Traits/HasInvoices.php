@@ -6,44 +6,23 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Aldiazhar\Invoice\Models\Invoice;
 use Aldiazhar\Invoice\Builders\InvoiceBuilder;
 
-/**
- * Trait for models that can pay invoices (User, Agent, Company, etc.)
- * 
- * Usage:
- * class User extends Model implements Payer
- * {
- *     use HasInvoices;
- * }
- */
 trait HasInvoices
 {
-    /**
-     * Get all invoices for this payer
-     */
     public function invoices(): MorphMany
     {
         return $this->morphMany(Invoice::class, 'payer');
     }
 
-    /**
-     * Start building an invoice (full method name)
-     */
     public function invoice(): InvoiceBuilder
     {
         return new InvoiceBuilder($this);
     }
 
-    /**
-     * Alias for invoice() - shorter syntax
-     */
     public function inv(): InvoiceBuilder
     {
         return $this->invoice();
     }
 
-    /**
-     * Quick create invoice (legacy support)
-     */
     public function createInvoice(
         $invoiceable,
         float $amount,
@@ -81,81 +60,51 @@ trait HasInvoices
         return $builder->create();
     }
 
-    /**
-     * Get paid invoices
-     */
     public function paidInvoices()
     {
         return $this->invoices()->paid();
     }
 
-    /**
-     * Get pending invoices
-     */
     public function pendingInvoices()
     {
         return $this->invoices()->pending();
     }
 
-    /**
-     * Get failed invoices
-     */
     public function failedInvoices()
     {
         return $this->invoices()->failed();
     }
 
-    /**
-     * Get overdue invoices
-     */
     public function overdueInvoices()
     {
         return $this->invoices()->overdue();
     }
 
-    /**
-     * Get total amount paid
-     */
     public function getTotalPaidAmount(): float
     {
         return (float) $this->invoices()->paid()->sum('total_amount');
     }
 
-    /**
-     * Get total pending amount
-     */
     public function getTotalPendingAmount(): float
     {
         return (float) $this->invoices()->pending()->sum('total_amount');
     }
 
-    /**
-     * Get total overdue amount
-     */
     public function getTotalOverdueAmount(): float
     {
         return (float) $this->invoices()->overdue()->sum('total_amount');
     }
 
-    /**
-     * Check if payer has any pending invoices
-     */
     public function hasPendingInvoices(): bool
     {
         return $this->invoices()->pending()->exists();
     }
 
-    /**
-     * Check if payer has any overdue invoices
-     */
     public function hasOverdueInvoices(): bool
     {
         return $this->invoices()->overdue()->exists();
     }
 
-    /**
-     * Get invoice statistics
-     */
     public function getInvoiceStats(): array
     {
         return [

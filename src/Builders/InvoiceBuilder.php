@@ -7,7 +7,6 @@ use Aldiazhar\Invoice\Models\InvoiceItem;
 use Aldiazhar\Invoice\Contracts\Payer;
 use Aldiazhar\Invoice\Contracts\Invoiceable as InvoiceableContract;
 use Aldiazhar\Invoice\Exceptions\InvoiceException;
-use Illuminate\Support\Str;
 use Carbon\Carbon;
 
 class InvoiceBuilder
@@ -22,20 +21,22 @@ class InvoiceBuilder
     protected $dueDate;
     protected $description;
     protected $metadata = [];
-    protected $callbacks = [];
     protected $afterCreateCallbacks = [];
     protected $afterPaidCallbacks = [];
+    protected $strictValidation = true;
+    protected $isRecurring = false;
+    protected $recurringFrequency;
+    protected $recurringInterval = 1;
+    protected $recurringEndDate;
 
     public function __construct($payer = null)
     {
         $this->payer = $payer;
         $this->currency = config('invoice.currency', 'USD');
         $this->status = config('invoice.statuses.pending', 'pending');
+        $this->strictValidation = config('invoice.strict_validation', true);
     }
 
-    /**
-     * Set the payer (who pays)
-     */
     public function from($payer): self
     {
         if (!$payer instanceof Payer) {
@@ -46,9 +47,6 @@ class InvoiceBuilder
         return $this;
     }
 
-    /**
-     * Set the invoiceable (what is being paid)
-     */
     public function pay($invoiceable): self
     {
         if (!$invoiceable instanceof InvoiceableContract) {
@@ -56,44 +54,34 @@ class InvoiceBuilder
         }
         
         $this->invoiceable = $invoiceable;
-        
-        // Auto-add as first item if amount exists
-        if ($invoiceable->getInvoiceableAmount() > 0) {
-            $this->item(
-                $invoiceable->getInvoiceableDescription(),
-                $invoiceable->getInvoiceableAmount()
-            );
-        }
-        
         return $this;
     }
 
-    /**
-     * Alias for pay()
-     */
     public function to($invoiceable): self
     {
         return $this->pay($invoiceable);
     }
 
-    /**
-     * For invoiceable models - set who pays
-     */
     public function by($payer): self
     {
         return $this->from($payer);
     }
 
-    /**
-     * Add an item to the invoice
-     * 
-     * Supports multiple formats:
-     * 1. Array format: ->item(['name' => 'Product', 'price' => 100, ...])
-     * 2. String format: ->item('Product', 100, 2, 0.1)
-     */
+    public function withInvoiceableItem(): self
+    {
+        if ($this->invoiceable && $this->invoiceable->getInvoiceableAmount() > 0) {
+            $this->item([
+                'name' => $this->invoiceable->getInvoiceableDescription(),
+                'price' => $this->invoiceable->getInvoiceableAmount(),
+                'quantity' => 1,
+            ]);
+        }
+        
+        return $this;
+    }
+
     public function item($nameOrArray, float $price = null, int $quantity = 1, float $taxRate = 0): self
     {
-        // If first parameter is array, use array format
         if (is_array($nameOrArray)) {
             $itemData = $nameOrArray;
             
@@ -101,6 +89,8 @@ class InvoiceBuilder
             $price = $itemData['price'] ?? 0;
             $quantity = $itemData['quantity'] ?? $itemData['qty'] ?? 1;
             $taxRate = $itemData['tax_rate'] ?? $itemData['tax'] ?? 0;
+            
+            $this->validateItem($name, $price, $quantity, $taxRate);
             
             $this->items[] = [
                 'name' => $name,
@@ -113,7 +103,8 @@ class InvoiceBuilder
                 'sku' => $itemData['sku'] ?? null,
             ];
         } else {
-            // Traditional string format
+            $this->validateItem($nameOrArray, $price, $quantity, $taxRate);
+            
             $this->items[] = [
                 'name' => $nameOrArray,
                 'description' => $nameOrArray,
@@ -129,58 +120,47 @@ class InvoiceBuilder
         return $this;
     }
 
-    /**
-     * Add multiple items at once
-     */
     public function items(array $items): self
     {
         foreach ($items as $item) {
-            // Each item is already an array
             $this->item($item);
         }
         
         return $this;
     }
 
-    /**
-     * Set tax amount
-     */
     public function tax(float $amount): self
     {
+        if ($amount < 0) {
+            throw new InvoiceException('Tax amount cannot be negative');
+        }
+        
         $this->taxAmount = $amount;
         return $this;
     }
 
-    /**
-     * Set discount amount
-     */
     public function discount(float $amount): self
     {
+        if ($amount < 0) {
+            throw new InvoiceException('Discount amount cannot be negative');
+        }
+        
         $this->discountAmount = $amount;
         return $this;
     }
 
-    /**
-     * Set currency
-     */
     public function currency(string $currency): self
     {
         $this->currency = $currency;
         return $this;
     }
 
-    /**
-     * Set status
-     */
     public function status(string $status): self
     {
         $this->status = $status;
         return $this;
     }
 
-    /**
-     * Set due date (accepts string or Carbon)
-     */
     public function due($date): self
     {
         if (is_string($date)) {
@@ -192,53 +172,51 @@ class InvoiceBuilder
         return $this;
     }
 
-    /**
-     * Set description
-     */
     public function description(string $description): self
     {
         $this->description = $description;
         return $this;
     }
 
-    /**
-     * Set metadata
-     */
     public function meta(array $metadata): self
     {
         $this->metadata = array_merge($this->metadata, $metadata);
         return $this;
     }
 
-    /**
-     * Add callback to execute after invoice is created
-     */
+    public function withoutStrictValidation(): self
+    {
+        $this->strictValidation = false;
+        return $this;
+    }
+
+    public function makeRecurring(string $frequency = 'monthly', ?Carbon $endDate = null, int $interval = 1): self
+    {
+        $this->isRecurring = true;
+        $this->recurringFrequency = $frequency;
+        $this->recurringInterval = $interval;
+        $this->recurringEndDate = $endDate;
+        
+        return $this;
+    }
+
     public function after(callable $callback): self
     {
         $this->afterCreateCallbacks[] = $callback;
         return $this;
     }
 
-    /**
-     * Add callback to execute when invoice is paid
-     */
     public function onPaid(callable $callback): self
     {
         $this->afterPaidCallbacks[] = $callback;
         return $this;
     }
 
-    /**
-     * Alias for onPaid (backward compatibility)
-     */
     public function whenPaid(callable $callback): self
     {
         return $this->onPaid($callback);
     }
 
-    /**
-     * Create the invoice
-     */
     public function create(): Invoice
     {
         $this->validate();
@@ -246,17 +224,14 @@ class InvoiceBuilder
         $invoice = new Invoice();
         $invoice->invoice_number = $this->generateInvoiceNumber();
         
-        // Set payer
         $invoice->payer_type = get_class($this->payer);
         $invoice->payer_id = $this->payer->id;
         $invoice->payer_name = $this->payer->getPayerName();
         $invoice->payer_email = $this->payer->getPayerEmail();
         
-        // Set invoiceable
         $invoice->invoiceable_type = get_class($this->invoiceable);
         $invoice->invoiceable_id = $this->invoiceable->id;
         
-        // Calculate amounts
         $subtotal = collect($this->items)->sum('subtotal');
         $itemTaxes = collect($this->items)->sum(function ($item) {
             return $item['subtotal'] * $item['tax_rate'];
@@ -267,26 +242,38 @@ class InvoiceBuilder
         $invoice->discount_amount = $this->discountAmount;
         $invoice->total_amount = $subtotal + $invoice->tax_amount - $invoice->discount_amount;
         
-        // Set other attributes
+        if ($this->strictValidation && $this->invoiceable->getInvoiceableAmount() > 0) {
+            $expectedAmount = $this->invoiceable->getInvoiceableAmount();
+            $calculatedAmount = $invoice->total_amount;
+            
+            if (abs($expectedAmount - $calculatedAmount) > 0.01) {
+                throw InvoiceException::amountMismatch($expectedAmount, $calculatedAmount);
+            }
+        }
+        
         $invoice->currency = $this->currency;
         $invoice->status = $this->status;
         $invoice->description = $this->description;
         $invoice->due_date = $this->dueDate ?? now()->addDays(config('invoice.due_date_days', 30));
         
-        // Merge metadata
+        if ($this->isRecurring) {
+            $invoice->is_recurring = true;
+            $invoice->recurring_frequency = $this->recurringFrequency;
+            $invoice->recurring_interval = $this->recurringInterval;
+            $invoice->recurring_end_date = $this->recurringEndDate;
+            $invoice->next_billing_date = $this->calculateNextBillingDate();
+        }
+        
         $invoice->metadata = array_merge(
             $this->metadata,
             $this->payer->getPayerMetadata(),
             $this->invoiceable->getInvoiceableMetadata()
         );
         
-        // Store callbacks - we'll execute them later, not serialize
-        // Callbacks are stored in memory only, not in database
         $invoice->after_paid_callbacks = $this->afterPaidCallbacks;
         
         $invoice->save();
         
-        // Create invoice items
         foreach ($this->items as $item) {
             InvoiceItem::create([
                 'invoice_id' => $invoice->id,
@@ -301,7 +288,6 @@ class InvoiceBuilder
             ]);
         }
         
-        // Execute after-create callbacks immediately
         foreach ($this->afterCreateCallbacks as $callback) {
             try {
                 $callback($invoice);
@@ -313,27 +299,70 @@ class InvoiceBuilder
         return $invoice->fresh(['items']);
     }
 
-    /**
-     * Validate builder data
-     */
-    protected function validate(): void
+    protected function validateItem(string $name, float $price, int $quantity, float $taxRate): void
     {
-        if (!$this->payer) {
-            throw new InvoiceException('Payer is required');
+        if (empty($name)) {
+            throw new InvoiceException('Item name is required');
         }
         
-        if (!$this->invoiceable) {
-            throw new InvoiceException('Invoiceable is required');
+        if ($price < 0) {
+            throw InvoiceException::negativePrice($name, $price);
         }
         
-        if (empty($this->items)) {
-            throw new InvoiceException('At least one item is required');
+        if ($quantity < 1) {
+            throw InvoiceException::invalidQuantity($name);
+        }
+        
+        if ($taxRate < 0 || $taxRate > 1) {
+            throw InvoiceException::invalidTaxRate($name, $taxRate);
         }
     }
 
-    /**
-     * Generate unique invoice number
-     */
+    protected function validate(): void
+    {
+        if (!$this->payer) {
+            throw InvoiceException::payerRequired();
+        }
+        
+        if (!$this->invoiceable) {
+            throw InvoiceException::invoiceableRequired();
+        }
+        
+        if (empty($this->items)) {
+            throw InvoiceException::itemsRequired();
+        }
+        
+        $subtotal = collect($this->items)->sum('subtotal');
+        if ($this->discountAmount > $subtotal) {
+            throw InvoiceException::discountExceedsSubtotal($this->discountAmount, $subtotal);
+        }
+        
+        $itemTaxes = collect($this->items)->sum(function ($item) {
+            return $item['subtotal'] * $item['tax_rate'];
+        });
+        
+        $totalAmount = $subtotal + $this->taxAmount + $itemTaxes - $this->discountAmount;
+        
+        if ($totalAmount < 0) {
+            throw InvoiceException::negativeTotalAmount(
+                $subtotal, 
+                $this->taxAmount + $itemTaxes, 
+                $this->discountAmount
+            );
+        }
+    }
+
+    protected function calculateNextBillingDate(): Carbon
+    {
+        return match($this->recurringFrequency) {
+            'daily' => now()->addDays($this->recurringInterval),
+            'weekly' => now()->addWeeks($this->recurringInterval),
+            'monthly' => now()->addMonths($this->recurringInterval),
+            'yearly' => now()->addYears($this->recurringInterval),
+            default => now()->addMonth(),
+        };
+    }
+
     protected function generateInvoiceNumber(): string
     {
         $prefix = config('invoice.invoice_number.prefix', 'INV-');

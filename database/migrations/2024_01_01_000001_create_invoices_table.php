@@ -8,22 +8,18 @@ return new class extends Migration
 {
     public function up()
     {
-        // Create invoices table
         Schema::create('invoices', function (Blueprint $table) {
             $table->id();
             $table->string('invoice_number')->unique();
             
-            // Polymorphic relation for payer (who pays)
             $table->morphs('payer');
             $table->string('payer_name')->nullable();
             $table->string('payer_email')->nullable();
             
-            // Polymorphic relation for invoiceable (what is being paid)
             $table->morphs('invoiceable');
             
             $table->text('description')->nullable();
             
-            // Amount breakdown
             $table->decimal('subtotal_amount', 15, 2);
             $table->decimal('tax_amount', 15, 2)->default(0);
             $table->decimal('discount_amount', 15, 2)->default(0);
@@ -37,38 +33,27 @@ return new class extends Migration
             
             $table->json('metadata')->nullable();
             
+            $table->boolean('is_recurring')->default(false);
+            $table->string('recurring_frequency')->nullable();
+            $table->integer('recurring_interval')->default(1);
+            $table->timestamp('recurring_end_date')->nullable();
+            $table->timestamp('next_billing_date')->nullable();
+            $table->foreignId('parent_invoice_id')->nullable()->constrained('invoices')->nullOnDelete();
+            
             $table->timestamps();
             $table->softDeletes();
             
-            // Indexes for performance
             $table->index(['payer_id', 'payer_type']);
             $table->index(['invoiceable_id', 'invoiceable_type']);
             $table->index('status');
             $table->index('due_date');
             $table->index('paid_at');
-        });
-
-        // Create invoice_items table
-        Schema::create('invoice_items', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('invoice_id')->constrained()->onDelete('cascade');
-            
-            $table->string('name');
-            $table->text('description')->nullable();
-            $table->decimal('price', 15, 2);
-            $table->integer('quantity')->default(1);
-            $table->decimal('tax_rate', 8, 4)->default(0);
-            $table->decimal('subtotal', 15, 2);
-            $table->string('sku')->nullable();
-            $table->text('notes')->nullable();
-            $table->index('invoice_id');
-            $table->index('sku');
+            $table->index(['is_recurring', 'next_billing_date']);
         });
     }
 
     public function down()
     {
-        Schema::dropIfExists('invoice_items');
         Schema::dropIfExists('invoices');
     }
 };

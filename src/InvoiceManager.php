@@ -7,57 +7,36 @@ use Aldiazhar\Invoice\Builders\InvoiceBuilder;
 
 class InvoiceManager
 {
-    /**
-     * Create a new invoice builder
-     */
     public function create($payer, $invoiceable): InvoiceBuilder
     {
         return (new InvoiceBuilder($payer))->pay($invoiceable);
     }
 
-    /**
-     * Find invoice by ID
-     */
     public function find($id): ?Invoice
     {
         return Invoice::find($id);
     }
 
-    /**
-     * Get all pending invoices
-     */
     public function pending()
     {
         return Invoice::pending()->get();
     }
 
-    /**
-     * Get all paid invoices
-     */
     public function paid()
     {
         return Invoice::paid()->get();
     }
 
-    /**
-     * Get all overdue invoices
-     */
     public function overdue()
     {
         return Invoice::overdue()->get();
     }
 
-    /**
-     * Get all failed invoices
-     */
     public function failed()
     {
         return Invoice::failed()->get();
     }
 
-    /**
-     * Get statistics
-     */
     public function stats(): array
     {
         return [

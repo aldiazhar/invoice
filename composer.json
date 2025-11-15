@@ -1,7 +1,7 @@
 {
     "name": "aldiazhar/laravel-invoice",
-    "description": "Revolutionary Laravel invoice package with dual morph relationships and fluent builder pattern",
-    "keywords": ["laravel", "invoice", "payment", "billing", "polymorphic"],
+    "description": "A flexible and powerful invoice management package for Laravel",
+    "keywords": ["laravel", "invoice", "billing", "payment"],
     "type": "library",
     "license": "MIT",
     "authors": [
@@ -13,12 +13,14 @@
     "require": {
         "php": "^8.1|^8.2|^8.3",
         "illuminate/support": "^10.0|^11.0|^12.0",
+        "illuminate/database": "^10.0|^11.0|^12.0",
         "illuminate/http": "^10.0|^11.0|^12.0",
         "illuminate/contracts": "^10.0|^11.0|^12.0"
     },
     "require-dev": {
-        "orchestra/testbench": "^8.0|^9.0|^10.0",
-        "phpunit/phpunit": "^10.0"
+        "orchestra/testbench": "^8.0|^9.0",
+        "phpunit/phpunit": "^10.0",
+        "mockery/mockery": "^1.5"
     },
     "autoload": {
         "psr-4": {
@@ -40,6 +42,6 @@
             }
         }
     },
-    "minimum-stability": "stable",
+    "minimum-stability": "dev",
     "prefer-stable": true
 }

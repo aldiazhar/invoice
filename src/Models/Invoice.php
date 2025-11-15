@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Aldiazhar\Invoice\Exceptions\InvoiceException;
+use Carbon\Carbon;
 
 class Invoice extends Model
 {
@@ -30,6 +31,12 @@ class Invoice extends Model
         'due_date',
         'paid_at',
         'metadata',
+        'is_recurring',
+        'recurring_frequency',
+        'recurring_interval',
+        'recurring_end_date',
+        'next_billing_date',
+        'parent_invoice_id',
     ];
 
     protected $casts = [
@@ -40,13 +47,13 @@ class Invoice extends Model
         'due_date' => 'datetime',
         'paid_at' => 'datetime',
         'metadata' => 'array',
+        'is_recurring' => 'boolean',
+        'recurring_end_date' => 'datetime',
+        'next_billing_date' => 'datetime',
     ];
 
     protected $appends = ['status_label', 'formatted_total'];
 
-    /**
-     * Store callbacks in memory (not in database)
-     */
     public $after_paid_callbacks = [];
 
     public function __construct(array $attributes = [])
@@ -55,37 +62,82 @@ class Invoice extends Model
         $this->setTable(config('invoice.tables.invoices', 'invoices'));
     }
 
-    /**
-     * Get the payer (polymorphic)
-     */
+    protected static function booted()
+    {
+        if (!config('invoice.activity_log.enabled', true)) {
+            return;
+        }
+
+        static::created(function ($invoice) {
+            $invoice->logActivity('created', 'Invoice created');
+        });
+
+        static::updated(function ($invoice) {
+            $changes = $invoice->getChanges();
+            
+            foreach ($changes as $field => $newValue) {
+                if ($field === 'status') {
+                    $oldValue = $invoice->getOriginal('status');
+                    $invoice->logActivity('status_changed', 
+                        "Status changed from '{$oldValue}' to '{$newValue}'",
+                        ['field' => 'status', 'old' => $oldValue, 'new' => $newValue]
+                    );
+                }
+                
+                if ($field === 'total_amount') {
+                    $oldValue = $invoice->getOriginal('total_amount');
+                    $invoice->logActivity('amount_changed',
+                        "Amount changed from {$oldValue} to {$newValue}",
+                        ['field' => 'total_amount', 'old' => $oldValue, 'new' => $newValue]
+                    );
+                }
+            }
+        });
+
+        static::deleted(function ($invoice) {
+            $invoice->logActivity('deleted', 'Invoice deleted');
+        });
+    }
+
     public function payer(): MorphTo
     {
         return $this->morphTo();
     }
 
-    /**
-     * Get the invoiceable (polymorphic)
-     */
     public function invoiceable(): MorphTo
     {
         return $this->morphTo();
     }
 
-    /**
-     * Get invoice items
-     */
     public function items(): HasMany
     {
         return $this->hasMany(InvoiceItem::class);
     }
 
-    /**
-     * Mark invoice as paid and execute callbacks
-     */
+    public function payments(): HasMany
+    {
+        return $this->hasMany(InvoicePayment::class);
+    }
+
+    public function activities(): HasMany
+    {
+        return $this->hasMany(InvoiceActivity::class);
+    }
+
+    public function parentInvoice()
+    {
+        return $this->belongsTo(Invoice::class, 'parent_invoice_id');
+    }
+
+    public function childInvoices()
+    {
+        return $this->hasMany(Invoice::class, 'parent_invoice_id');
+    }
+
     public function markAsPaid(): bool
     {
         if ($this->isPaid()) {
-            throw new InvoiceException('Invoice is already paid.');
+            throw InvoiceException::alreadyPaid();
         }
 
         $this->update([
@@ -93,10 +145,8 @@ class Invoice extends Model
             'paid_at' => now(),
         ]);
 
-        // Execute callbacks
         $this->executeCallbacks();
 
-        // Trigger invoiceable callback
         if ($this->invoiceable && method_exists($this->invoiceable, 'onInvoicePaid')) {
             $this->invoiceable->onInvoicePaid($this);
         }
@@ -104,23 +154,18 @@ class Invoice extends Model
         return true;
     }
 
-    /**
-     * Execute registered callbacks
-     */
     protected function executeCallbacks(): void
     {
         if (!config('invoice.callbacks.enabled', true)) {
             return;
         }
 
-        // Execute in-memory callbacks (from builder when paid)
         if (!empty($this->after_paid_callbacks)) {
             foreach ($this->after_paid_callbacks as $callback) {
                 if (is_callable($callback)) {
                     try {
                         $callback($this);
                     } catch (\Exception $e) {
-                        // Log error but don't fail the payment
                         logger()->error('Invoice paid callback error: ' . $e->getMessage());
                     }
                 }
@@ -128,13 +173,10 @@ class Invoice extends Model
         }
     }
 
-    /**
-     * Cancel the invoice
-     */
     public function cancel(): bool
     {
         if ($this->isPaid()) {
-            throw new InvoiceException('Cannot cancel a paid invoice.');
+            throw InvoiceException::cannotCancelPaid();
         }
 
         return $this->update([
@@ -142,9 +184,6 @@ class Invoice extends Model
         ]);
     }
 
-    /**
-     * Mark as failed
-     */
     public function markAsFailed(): bool
     {
         return $this->update([
@@ -152,13 +191,10 @@ class Invoice extends Model
         ]);
     }
 
-    /**
-     * Refund the invoice
-     */
     public function refund(): bool
     {
         if (!$this->isPaid()) {
-            throw new InvoiceException('Only paid invoices can be refunded.');
+            throw InvoiceException::cannotRefundUnpaid();
         }
 
         return $this->update([
@@ -166,9 +202,96 @@ class Invoice extends Model
         ]);
     }
 
-    /**
-     * Check if invoice is overdue
-     */
+    public function addPayment(float $amount, string $method = 'manual', array $data = []): InvoicePayment
+    {
+        $remaining = $this->getRemainingAmount();
+        
+        if ($amount > $remaining) {
+            throw InvoiceException::paymentExceedsRemaining($amount, $remaining);
+        }
+        
+        $payment = $this->payments()->create([
+            'amount' => $amount,
+            'payment_method' => $method,
+            'reference_number' => $data['reference'] ?? null,
+            'notes' => $data['notes'] ?? null,
+            'metadata' => $data['metadata'] ?? [],
+            'paid_at' => now(),
+        ]);
+        
+        if ($this->getRemainingAmount() <= 0) {
+            $this->markAsPaid();
+        }
+        
+        return $payment;
+    }
+
+    public function getPaidAmount(): float
+    {
+        return (float) $this->payments()->sum('amount');
+    }
+
+    public function getRemainingAmount(): float
+    {
+        return $this->total_amount - $this->getPaidAmount();
+    }
+
+    public function isFullyPaid(): bool
+    {
+        return $this->getRemainingAmount() <= 0;
+    }
+
+    public function generateNextInvoice(): ?Invoice
+    {
+        if (!$this->is_recurring) {
+            return null;
+        }
+        
+        if ($this->recurring_end_date && now()->isAfter($this->recurring_end_date)) {
+            return null;
+        }
+        
+        $newInvoice = $this->replicate(['invoice_number', 'paid_at', 'status']);
+        $newInvoice->parent_invoice_id = $this->id;
+        $newInvoice->due_date = now()->addDays(config('invoice.due_date_days'));
+        $newInvoice->save();
+        
+        foreach ($this->items as $item) {
+            $newInvoice->items()->create($item->toArray());
+        }
+        
+        $this->update([
+            'next_billing_date' => $this->calculateNextBillingDate(),
+        ]);
+        
+        return $newInvoice;
+    }
+
+    protected function calculateNextBillingDate(): Carbon
+    {
+        return match($this->recurring_frequency) {
+            'daily' => $this->next_billing_date->addDays($this->recurring_interval),
+            'weekly' => $this->next_billing_date->addWeeks($this->recurring_interval),
+            'monthly' => $this->next_billing_date->addMonths($this->recurring_interval),
+            'yearly' => $this->next_billing_date->addYears($this->recurring_interval),
+            default => $this->next_billing_date->addMonth(),
+        };
+    }
+
+    public function logActivity(string $action, string $description, array $data = []): void
+    {
+        $this->activities()->create([
+            'action' => $action,
+            'description' => $description,
+            'old_values' => $data['old'] ?? null,
+            'new_values' => $data['new'] ?? null,
+            'ip_address' => request()->ip(),
+            'user_agent' => request()->userAgent(),
+            'causer_type' => auth()->check() ? get_class(auth()->user()) : null,
+            'causer_id' => auth()->id(),
+        ]);
+    }
+
     public function isOverdue(): bool
     {
         return $this->status === config('invoice.statuses.pending', 'pending')
@@ -176,83 +299,53 @@ class Invoice extends Model
             && $this->due_date->isPast();
     }
 
-    /**
-     * Check if invoice is paid
-     */
     public function isPaid(): bool
     {
         return $this->status === config('invoice.statuses.paid', 'paid');
     }
 
-    /**
-     * Check if invoice is pending
-     */
     public function isPending(): bool
     {
         return $this->status === config('invoice.statuses.pending', 'pending');
     }
 
-    /**
-     * Get status label
-     */
     public function getStatusLabelAttribute(): string
     {
         return ucfirst($this->status);
     }
 
-    /**
-     * Get formatted total
-     */
     public function getFormattedTotalAttribute(): string
     {
         return $this->currency . ' ' . number_format($this->total_amount, 2);
     }
 
-    /**
-     * Scope for pending invoices
-     */
     public function scopePending($query)
     {
         return $query->where('status', config('invoice.statuses.pending', 'pending'));
     }
 
-    /**
-     * Scope for paid invoices
-     */
     public function scopePaid($query)
     {
         return $query->where('status', config('invoice.statuses.paid', 'paid'));
     }
 
-    /**
-     * Scope for failed invoices
-     */
     public function scopeFailed($query)
     {
         return $query->where('status', config('invoice.statuses.failed', 'failed'));
     }
 
-    /**
-     * Scope for overdue invoices
-     */
     public function scopeOverdue($query)
     {
         return $query->where('status', config('invoice.statuses.pending', 'pending'))
                     ->where('due_date', '<', now());
     }
 
-    /**
-     * Scope for specific payer
-     */
     public function scopeForPayer($query, $payer)
     {
         return $query->where('payer_type', get_class($payer))
                     ->where('payer_id', $payer->id);
     }
 
-    /**
-     * Scope for specific invoiceable
-     */
     public function scopeForInvoiceable($query, $invoiceable)
     {
         return $query->where('invoiceable_type', get_class($invoiceable))
