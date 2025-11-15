@@ -38,34 +38,16 @@ class InvoiceBuilder
         $this->strictValidation = config('invoice.strict_validation', true);
     }
 
-    public function from($payer): self
+    public function to($payer): self
     {
-        if (!$this->isValidPayer($payer)) {
-            throw new InvoiceException('Payer must implement Payer interface');
-        }
-        
         $this->payer = $payer;
         return $this;
     }
 
     public function pay($invoiceable): self
     {
-        if (!$this->isValidInvoiceable($invoiceable)) {
-            throw new InvoiceException('Invoiceable must implement Invoiceable interface');
-        }
-        
         $this->invoiceable = $invoiceable;
         return $this;
-    }
-
-    public function to($invoiceable): self
-    {
-        return $this->pay($invoiceable);
-    }
-
-    public function by($payer): self
-    {
-        return $this->from($payer);
     }
 
     public function withInvoiceableItem(): self

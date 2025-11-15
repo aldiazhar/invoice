@@ -21,7 +21,25 @@ php artisan vendor:publish --tag=invoice-migrations
 php artisan migrate
 ```
 
-## Quick Start
+## Quick Start Guide
+
+### Two Ways to Create Invoice
+
+**Method 1: From Payer (User) Perspective**
+```php
+$invoice = $user->invoice()
+    ->pay($payment)     // What to pay
+    ->create();
+```
+
+**Method 2: From Invoiceable (Payment) Perspective**
+```php
+$invoice = $payment->bill()
+    ->to($user)         // Bill to whom
+    ->create();
+```
+
+Both methods create the same invoice!
 
 ### 1. Setup Models
 
@@ -57,19 +75,19 @@ class User extends Model implements Payer
 }
 ```
 
-**TopUp Model (Invoiceable):**
+**Payment Model (Invoiceable):**
 
 ```php
-use Aldiazhar\Invoice\Contracts\Invoiceable as InvoiceableContract;
-use Aldiazhar\Invoice\Traits\Invoiceable;
+use Aldiazhar\Invoice\Contracts\Invoiceable;
+use Aldiazhar\Invoice\Traits\Invoiceable as InvoiceableTrait;
 
-class TopUp extends Model implements InvoiceableContract
+class Payment extends Model implements Invoiceable
 {
-    use Invoiceable;
+    use InvoiceableTrait;
 
     public function getInvoiceableDescription(): string
     {
-        return "Top Up - {$this->package_name}";
+        return "Payment #{$this->id}";
     }
 
     public function getInvoiceableAmount(): float
@@ -79,7 +97,10 @@ class TopUp extends Model implements InvoiceableContract
 
     public function getInvoiceableMetadata(): array
     {
-        return ['package_id' => $this->package_id];
+        return [
+            'payment_method' => $this->payment_method,
+            'reference' => $this->reference_number,
+        ];
     }
 
     public function onInvoicePaid($invoice): void
@@ -91,12 +112,28 @@ class TopUp extends Model implements InvoiceableContract
 
 ### 2. Create Invoice
 
-**Simple Invoice:**
+**Auto Item (Recommended - No items needed!):**
+
+```php
+// From Payer perspective
+$invoice = $user->invoice()
+    ->pay($payment)
+    ->create();
+
+// From Invoiceable perspective  
+$invoice = $payment->bill()
+    ->to($user)
+    ->create();
+```
+
+Item otomatis dibuat dari `getInvoiceableDescription()` dan `getInvoiceableAmount()`
+
+**Manual Single Item:**
 
 ```php
 $invoice = $user->invoice()
-    ->pay($topup)
-    ->item('Top Up Package', 100000)
+    ->pay($payment)
+    ->item('Payment Processing', 100000)
     ->create();
 ```
 
@@ -121,6 +158,16 @@ $invoice = $user->invoice()
         ['name' => 'Product A', 'price' => 50000, 'quantity' => 2, 'tax_rate' => 0.11],
         ['name' => 'Product B', 'price' => 75000, 'quantity' => 1],
     ])
+    ->create();
+```
+
+**Without Auto Item (Manual Control):**
+
+```php
+$invoice = $user->invoice()
+    ->pay($order)
+    ->withoutAutoItem()
+    ->item('Custom Item', 100000)
     ->create();
 ```
 
@@ -213,6 +260,46 @@ foreach ($activities as $activity) {
 }
 ```
 
+## Auto Item Feature
+
+**Default Behavior (Auto Item Enabled):**
+
+```php
+$payment = Payment::create(['amount' => 100000]);
+
+$invoice = $user->invoice()
+    ->pay($payment)
+    ->create();
+```
+
+Secara otomatis membuat item dengan:
+- Name: dari `getInvoiceableDescription()` 
+- Price: dari `getInvoiceableAmount()`
+- Quantity: 1
+
+**Disable Auto Item:**
+
+```php
+$invoice = $user->invoice()
+    ->pay($payment)
+    ->withoutAutoItem()
+    ->item('Custom Item', 50000)
+    ->item('Another Item', 50000)
+    ->create();
+```
+
+**Force Add Invoiceable Item:**
+
+```php
+$invoice = $user->invoice()
+    ->pay($payment)
+    ->item('Extra Service', 20000)
+    ->withInvoiceableItem()
+    ->create();
+```
+
+Total: 120000 (100000 from payment + 20000 from extra)
+
 ## Configuration
 
 Edit `config/invoice.php`:
@@ -238,44 +325,73 @@ return [
 Invoice total must match invoiceable amount:
 
 ```php
+$payment = Payment::create(['amount' => 100000]);
+
 $invoice = $user->invoice()
-    ->pay($topup)  // Amount: 100000
-    ->item('Top Up', 100000)  // Must match
+    ->pay($payment)
     ->create();
 ```
+
+Total: 100000 ✅
+
+```php
+$invoice = $user->invoice()
+    ->pay($payment)
+    ->item('Custom', 50000)
+    ->create();
+```
+
+Error: Mismatch! Expected 100000, got 50000 ❌
 
 ### Disable Strict Mode
 
 ```php
 $invoice = $user->invoice()
-    ->pay($topup)
-    ->item('Top Up', 50000)
+    ->pay($payment)
+    ->item('Custom', 50000)
     ->withoutStrictValidation()
     ->create();
 ```
+
+Total: 50000 ✅
 
 ## API Reference
 
 ### InvoiceBuilder Methods
 
 ```php
-->from($payer)
-->pay($invoiceable)
-->by($payer)
-->to($invoiceable)
+// Set who pays
+->to($payer)         // Set payer (who will pay)
+
+// Set what to pay
+->pay($invoiceable)  // Set invoiceable (what to pay)
+
+// Items
 ->item($name, $price, $quantity = 1, $taxRate = 0)
 ->items(array $items)
+->withInvoiceableItem()
+->withoutAutoItem()
+
+// Amounts
 ->tax(float $amount)
 ->discount(float $amount)
+
+// Details
 ->currency(string $currency)
 ->status(string $status)
 ->due($date)
 ->description(string $description)
 ->meta(array $metadata)
+
+// Options
 ->withoutStrictValidation()
 ->makeRecurring($frequency, $endDate, $interval)
+
+// Callbacks
 ->after(callable $callback)
 ->onPaid(callable $callback)
+
+// Execute
 ->create()
 ```
 
@@ -309,11 +425,28 @@ Invoice::forInvoiceable($invoiceable)
 
 ## Examples
 
-### E-Commerce Order
+### Simple Payment Invoice (Auto Item)
+
+```php
+$payment = Payment::create([
+    'user_id' => $user->id,
+    'amount' => 150000,
+    'payment_method' => 'bank_transfer',
+]);
+
+$invoice = $user->invoice()
+    ->pay($payment)
+    ->create();
+```
+
+Item dibuat otomatis dari payment!
+
+### E-Commerce Order (Manual Items)
 
 ```php
 $invoice = $user->invoice()
     ->pay($order)
+    ->withoutAutoItem()
     ->items($order->items->map(fn($item) => [
         'name' => $item->product->name,
         'price' => $item->price,
@@ -325,12 +458,16 @@ $invoice = $user->invoice()
     ->create();
 ```
 
-### Subscription
+### Subscription (Recurring + Auto Item)
 
 ```php
+$subscription = Subscription::create([
+    'plan' => 'premium',
+    'price' => 99000,
+]);
+
 $invoice = $user->invoice()
     ->pay($subscription)
-    ->item('Premium Membership', 99.99)
     ->makeRecurring('monthly')
     ->onPaid(function($invoice) {
         $invoice->invoiceable->renew();
@@ -338,17 +475,80 @@ $invoice = $user->invoice()
     ->create();
 ```
 
-### Service Payment
+### Service Payment (Mixed Items)
 
 ```php
+$service = Service::create([
+    'name' => 'Consulting',
+    'base_amount' => 1200,
+]);
+
 $invoice = $user->invoice()
     ->pay($service)
-    ->item('Consulting Service', 150, 8)
+    ->withInvoiceableItem()
+    ->item('Travel Cost', 200)
+    ->item('Materials', 100)
     ->tax(0.11)
-    ->due(now()->addDays(15))
-    ->description('Project: Website Development')
     ->create();
 ```
+
+Total: 1500 + 11% tax
+
+## Troubleshooting
+
+### Interface Implementation Issue
+
+Jika muncul error "must implement Invoiceable interface", pastikan:
+
+```php
+use Aldiazhar\Invoice\Contracts\Invoiceable;
+use Aldiazhar\Invoice\Traits\InvoiceableTrait;
+
+class Payment extends Model implements Invoiceable
+{
+    use InvoiceableTrait;
+    
+    public function getInvoiceableDescription(): string
+    {
+        return "Payment #{$this->id}";
+    }
+
+    public function getInvoiceableAmount(): float
+    {
+        return $this->amount;
+    }
+}
+```
+
+Jangan lupa implement semua method yang required!
+
+### Using bill()->to() vs invoice()->pay()
+
+```php
+// These are EQUIVALENT:
+
+// Option 1: From Payer
+$user->invoice()->pay($payment)->create();
+
+// Option 2: From Invoiceable  
+$payment->bill()->to($user)->create();
+
+// Both create the same invoice!
+```
+
+### Amount Mismatch Error
+
+```php
+$payment = Payment::create(['amount' => 100000]);
+
+$invoice = $user->invoice()
+    ->pay($payment)
+    ->item('Custom', 50000)
+    ->withoutStrictValidation()
+    ->create();
+```
+
+Atau pastikan total items = invoiceable amount
 
 ## License
 
