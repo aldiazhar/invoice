@@ -20,20 +20,20 @@ class InvoiceServiceProvider extends ServiceProvider
         ], 'invoice-config');
 
         // Publish views
-        $this->publishes([
-            __DIR__.'/../resources/views' => resource_path('views/vendor/invoice'),
-        ], 'invoice-views');
+        // $this->publishes([
+        //     __DIR__.'/../resources/views' => resource_path('views/vendor/invoice'),
+        // ], 'invoice-views');
 
         // Load migrations
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
 
         // Load views
-        $this->loadViewsFrom(__DIR__.'/../resources/views', 'invoice');
+        // $this->loadViewsFrom(__DIR__.'/../resources/views', 'invoice');
 
         // Load routes
-        if (config('invoice.routes.enabled', true)) {
-            $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
-        }
+        // if (config('invoice.routes.enabled', true)) {
+        //     $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
+        // }
     }
 
     public function register()
