@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Aldiazhar\Invoice\Models\Invoice;
 use Aldiazhar\Invoice\Builders\InvoiceBuilder;
 
-trait Invoiceable
+trait InvoiceableTrait
 {
     public function invoices(): MorphMany
     {
