@@ -332,7 +332,7 @@ $invoice = $user->invoice()
     ->create();
 ```
 
-Total: 100000 ✅
+Total: 100000 
 
 ```php
 $invoice = $user->invoice()
@@ -341,7 +341,7 @@ $invoice = $user->invoice()
     ->create();
 ```
 
-Error: Mismatch! Expected 100000, got 50000 ❌
+Error: Mismatch! Expected 100000, got 50000 
 
 ### Disable Strict Mode
 
@@ -353,7 +353,7 @@ $invoice = $user->invoice()
     ->create();
 ```
 
-Total: 50000 ✅
+Total: 50000 
 
 ## API Reference
 
